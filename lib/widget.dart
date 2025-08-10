@@ -275,23 +275,25 @@ class AltchaWidgetState extends State<AltchaWidget> {
       rethrow;
     }
   }
-
   Future<AltchaSolution?> _solveChallenge(
-    String algorithm,
-    String challenge,
-    String salt,
-    int? max,
-  ) async {
-    final Stopwatch stopwatch = Stopwatch()..start();
-    max ??= 1_000_000;
-    for (int n = 0; n <= max; n++) {
-      final String hashedValue = await _hashChallenge(salt, n, algorithm);
-      if (hashedValue == challenge) {
-        stopwatch.stop();
-        return AltchaSolution(number: n, took: stopwatch.elapsedMilliseconds);
-      }
-    }
-    return null;
+      String algorithm,
+      String challenge,
+      String salt,
+      int? max,
+      ) async {
+    print("DUMMY~!");
+    final result = await compute(
+      _solveChallengeIsolate,
+      {
+        'algorithm': algorithm,
+        'challenge': challenge,
+        'salt': salt,
+        'max': max ?? 1_000_000,
+      },
+    );
+
+    if (result == null) return null;
+    return AltchaSolution(number: result['number'] as int, took: result['took'] as int);
   }
 
   Future<void> verify() async {
@@ -530,3 +532,40 @@ const String altchaLogoSvg = '''
   <path d="M7 10H5C5 12.7614 7.23858 15 10 15C12.7614 15 15 12.7614 15 10H13C13 11.6569 11.6569 13 10 13C8.3431 13 7 11.6569 7 10Z" fill="currentColor"/>
 </svg>
 ''';
+
+Future<Map<String, dynamic>?> _solveChallengeIsolate(Map<String, dynamic> args) async {
+  final String algorithm = args['algorithm'] as String;
+  final String challenge = args['challenge'] as String;
+  final String salt = args['salt'] as String;
+  final int max = args['max'] as int? ?? 1000000;
+
+  final stopwatch = Stopwatch()..start();
+
+  for (int n = 0; n <= max; n++) {
+    final bytes = utf8.encode('$salt$n');
+    Digest digest;
+    switch (algorithm.toUpperCase()) {
+      case 'SHA-256':
+        digest = sha256.convert(bytes);
+        break;
+      case 'SHA-384':
+        digest = sha384.convert(bytes);
+        break;
+      case 'SHA-512':
+        digest = sha512.convert(bytes);
+        break;
+      default:
+      // unsupported -> return null (will be handled by caller)
+        return null;
+    }
+    if (digest.toString() == challenge) {
+      stopwatch.stop();
+      return {'number': n, 'took': stopwatch.elapsedMilliseconds};
+    }
+    // optional: occasionally yield to avoid starving VM scheduler (rarely needed)
+    // if (n % 10000 == 0) await Future(() {});
+  }
+
+  return null;
+}
+
